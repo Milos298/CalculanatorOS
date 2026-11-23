@@ -26,9 +26,18 @@ fi
 
 rm -rf "${BUILD_DIR}"
 mkdir -p \
+    "${CONFIG_DIR}/archives" \
     "${CONFIG_DIR}/package-lists" \
     "${CONFIG_DIR}/includes.chroot/etc/skel" \
     "${CONFIG_DIR}/includes.chroot/etc/systemd/system/getty@tty1.service.d"
+
+# Ubuntu's packaged live-build still generates Debian's pre-Trixie security
+# suite name. Disable that generated entry and add Debian's current suite name.
+printf '%s\n' \
+    "deb http://security.debian.org/debian-security trixie-security main contrib non-free-firmware" \
+    > "${CONFIG_DIR}/archives/calculanatoros-security.list.chroot"
+cp "${CONFIG_DIR}/archives/calculanatoros-security.list.chroot" \
+    "${CONFIG_DIR}/archives/calculanatoros-security.list.binary"
 
 cp "${APP_SOURCE}" \
     "${CONFIG_DIR}/includes.chroot/etc/skel/CalculanatorOS.py"
@@ -46,10 +55,9 @@ lb config \
     --architectures amd64 \
     --binary-images iso-hybrid \
     --archive-areas "main contrib non-free-firmware" \
+    --security false \
     --mirror-bootstrap "http://deb.debian.org/debian/" \
-    --mirror-chroot-security "http://security.debian.org/debian-security/" \
     --mirror-binary "http://deb.debian.org/debian/" \
-    --mirror-binary-security "http://security.debian.org/debian-security/" \
     --iso-application "CalculanatorOS Live" \
     --iso-volume "CALCULANATOROS" \
     --bootappend-live "boot=live components username=calculanator hostname=calculanatoros locales=en_US.UTF-8 keyboard-layouts=us"
