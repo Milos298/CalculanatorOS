@@ -28,3 +28,9 @@ Notes and installed packages are stored in internal flash. The Wi-Fi password is
 ## Limitations
 
 CalculanatorOS is a firmware shell running on MicroPython, not a standalone kernel or a multi-user operating system. The Pico 2 W is a microcontroller and cannot run standard Linux or Windows. `EXIT` closes the shell but does not power off the board.
+
+## Bootable PC/VirtualBox image
+
+The root `CalculanatorOS.py` file is the PC edition. The `boot-image/` folder builds an x86-64 Debian Live ISO that starts CalculanatorOS automatically in its text console. It is a Linux live image with CalculanatorOS as its main application, not a new kernel, and it is separate from the Raspberry Pi Pico firmware.
+
+After the build workflow is pushed to `main`, GitHub Actions builds the ISO when the PC app or image builder changes. Download `CalculanatorOS-live-amd64.iso` and its checksum from the workflow run's Artifacts section. See [`boot-image/README.md`](boot-image/README.md) for details.

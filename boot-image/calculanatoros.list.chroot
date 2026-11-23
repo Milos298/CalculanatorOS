@@ -1,0 +1,14 @@
+ca-certificates
+console-setup
+curl
+iproute2
+iputils-ping
+less
+locales
+lynx
+nano
+procps
+python3
+sudo
+util-linux
+wget

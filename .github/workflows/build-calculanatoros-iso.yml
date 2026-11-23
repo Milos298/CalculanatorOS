@@ -1,0 +1,38 @@
+name: Build CalculanatorOS bootable ISO
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'CalculanatorOS.py'
+      - 'desktop/CalculanatorOS.py'
+      - 'boot-image/**'
+      - '.github/workflows/build-calculanatoros-iso.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install live image build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y live-build debootstrap xorriso squashfs-tools isolinux syslinux-common grub-pc-bin grub-efi-amd64-bin mtools dosfstools
+
+      - name: Build bootable ISO
+        run: sudo bash ./boot-image/build-iso.sh
+
+      - name: Publish ISO as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CalculanatorOS-live-amd64
+          path: |
+            dist/CalculanatorOS-live-amd64.iso
+            dist/CalculanatorOS-live-amd64.iso.sha256
+          if-no-files-found: error
