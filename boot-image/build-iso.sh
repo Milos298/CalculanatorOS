@@ -11,7 +11,7 @@ BUILD_DIR="${PACKAGE_DIR}/.build-live-image"
 CONFIG_DIR="${BUILD_DIR}/config"
 
 command -v lb >/dev/null || {
-    echo "Missing live-build. On Debian/Ubuntu install: live-build debootstrap xorriso squashfs-tools" >&2
+    echo "Missing live-build. On Debian/Ubuntu install: live-build debootstrap debian-archive-keyring xorriso squashfs-tools" >&2
     exit 1
 }
 
@@ -41,10 +41,15 @@ cp "${PACKAGE_DIR}/boot-image/calculanatoros.list.chroot" \
 
 cd "${BUILD_DIR}"
 lb config \
+    --mode debian \
     --distribution trixie \
     --architectures amd64 \
     --binary-images iso-hybrid \
     --archive-areas "main contrib non-free-firmware" \
+    --mirror-bootstrap "http://deb.debian.org/debian/" \
+    --mirror-chroot-security "http://security.debian.org/debian-security/" \
+    --mirror-binary "http://deb.debian.org/debian/" \
+    --mirror-binary-security "http://security.debian.org/debian-security/" \
     --iso-application "CalculanatorOS Live" \
     --iso-volume "CALCULANATOROS" \
     --bootappend-live "boot=live components username=calculanator hostname=calculanatoros locales=en_US.UTF-8 keyboard-layouts=us"

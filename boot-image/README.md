@@ -15,7 +15,7 @@ Install the build tools:
 
 ```sh
 sudo apt update
-sudo apt install live-build debootstrap xorriso squashfs-tools isolinux syslinux-common grub-pc-bin grub-efi-amd64-bin mtools dosfstools
+sudo apt install live-build debootstrap debian-archive-keyring xorriso squashfs-tools isolinux syslinux-common grub-pc-bin grub-efi-amd64-bin mtools dosfstools
 ```
 
 From the root of the downloaded CalculanatorOS source tree, build the image:

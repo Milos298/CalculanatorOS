@@ -23,7 +23,7 @@ jobs:
       - name: Install live image build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y live-build debootstrap xorriso squashfs-tools isolinux syslinux-common grub-pc-bin grub-efi-amd64-bin mtools dosfstools
+          sudo apt-get install -y live-build debootstrap debian-archive-keyring xorriso squashfs-tools isolinux syslinux-common grub-pc-bin grub-efi-amd64-bin mtools dosfstools
 
       - name: Build bootable ISO
         run: sudo bash ./boot-image/build-iso.sh
