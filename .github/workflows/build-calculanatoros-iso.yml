@@ -20,13 +20,18 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Install live image build tools
+      - name: Build bootable ISO in Debian Trixie
         run: |
-          sudo apt-get update
-          sudo apt-get install -y live-build debootstrap debian-archive-keyring xorriso squashfs-tools isolinux syslinux-common grub-pc-bin grub-efi-amd64-bin mtools dosfstools
-
-      - name: Build bootable ISO
-        run: sudo bash ./boot-image/build-iso.sh
+          docker run --rm --privileged \
+            --volume "${GITHUB_WORKSPACE}:/workspace" \
+            --workdir /workspace \
+            debian:trixie \
+            bash -euc '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y live-build debootstrap debian-archive-keyring xorriso squashfs-tools isolinux syslinux-common grub-pc-bin grub-efi-amd64-bin mtools dosfstools
+              bash ./boot-image/build-iso.sh
+            '
 
       - name: Publish ISO as a workflow artifact
         uses: actions/upload-artifact@v4

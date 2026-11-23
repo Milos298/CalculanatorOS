@@ -9,7 +9,7 @@ The ISO is for 64-bit PCs and VirtualBox. It is separate from the MicroPython
 firmware for Raspberry Pi Pico 2 W. A Pico UF2 image cannot boot as a VirtualBox
 PC image, and this x86-64 ISO cannot boot on the Pico.
 
-## Build on Debian or Ubuntu
+## Build on Debian 13 (Trixie)
 
 Install the build tools:
 
@@ -31,8 +31,10 @@ dist/CalculanatorOS-live-amd64.iso
 dist/CalculanatorOS-live-amd64.iso.sha256
 ```
 
-The first build downloads Debian packages and needs an internet connection and
-several gigabytes of free disk space. The live session is temporary: files
+Use Debian 13 (Trixie) for a local build so the host's `live-build` version
+matches the target distribution. GitHub Actions builds inside a Debian Trixie
+container. The first build downloads Debian packages and needs an internet
+connection and several gigabytes of free disk space. The live session is temporary: files
 saved during a session are lost at shutdown unless a virtual hard disk or
 persistence is configured. The app's own registration is a convenience for
 the shell and is not an operating-system security boundary.
