@@ -41,6 +41,17 @@ cp "${CONFIG_DIR}/archives/calculanatoros-security.list.chroot" \
 
 cp "${APP_SOURCE}" \
     "${CONFIG_DIR}/includes.chroot/etc/skel/CalculanatorOS.py"
+DESKTOP_SOURCE="${PACKAGE_DIR}/CalculanatorOS_Desktop.py"
+if [[ ! -f "${DESKTOP_SOURCE}" ]]; then
+    echo "Could not find CalculanatorOS_Desktop.py in the repository root." >&2
+    exit 1
+fi
+cp "${DESKTOP_SOURCE}" \
+    "${CONFIG_DIR}/includes.chroot/etc/skel/CalculanatorOS_Desktop.py"
+mkdir -p "${CONFIG_DIR}/includes.chroot/usr/local/bin"
+cp "${PACKAGE_DIR}/boot-image/start-desktop.sh" \
+    "${CONFIG_DIR}/includes.chroot/usr/local/bin/calculanatoros-desktop"
+chmod 0755 "${CONFIG_DIR}/includes.chroot/usr/local/bin/calculanatoros-desktop"
 cp "${PACKAGE_DIR}/boot-image/.bash_profile" \
     "${CONFIG_DIR}/includes.chroot/etc/skel/.bash_profile"
 cp "${PACKAGE_DIR}/boot-image/autologin.conf" \

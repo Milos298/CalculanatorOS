@@ -6,7 +6,7 @@ on:
     branches: [main]
     paths:
       - 'CalculanatorOS.py'
-      - 'desktop/CalculanatorOS.py'
+      - 'CalculanatorOS_Desktop.py'
       - 'boot-image/**'
       - '.github/workflows/build-calculanatoros-iso.yml'
 

@@ -1,36 +1,23 @@
-# CalculanatorOS for Raspberry Pi Pico 2 W
+# CalculanatorOS
 
-CalculanatorOS is an experimental firmware shell for the Raspberry Pi Pico 2 W. It is not desktop Linux or Windows. MicroPython provides the runtime and automatically starts `main.py` when the board boots.
+CalculanatorOS is an experimental Python project with two separate editions: MicroPython firmware for Raspberry Pi Pico 2 W/WH and a Debian-based PC edition. The Pico edition is a USB-serial shell, while the PC edition has a graphical desktop. Neither edition is a new operating-system kernel.
 
-## Editions
+## Raspberry Pi Pico 2 W / WH
 
-- `Pico-Modular`: learning edition split into separate modules. `devices.py` contains the board hardware interface.
-- `Pico-SingleFile`: the same core features in one script. Rename it to `main.py` before uploading it to the board.
+- [`Pico-Modular/`](Pico-Modular/): learning version split into modules. Copy all `.py` files to the Pico and keep `main.py` beside the other modules.
+- [`Pico-SingleFile/calculanator_os.py`](Pico-SingleFile/calculanator_os.py): standalone version; upload it to the Pico as `main.py`.
+- [`PICO-README.md`](PICO-README.md): Pico setup steps, commands, storage, hardware notes, and limitations.
 
-On first boot, the system asks you to register a username and password. On later boots, sign in with that account. The Pico stores account data in `calculanator_user.txt`; the password is stored as a hash, not as readable text. Some MicroPython USB consoles may display password input while you type. To reset registration, delete this file from the Pico flash using Thonny, then restart the board.
+The Pico edition has a system dashboard, app launcher, settings saved in flash, calculator, notes, files and network tools. Its LED, Wi-Fi, Bluetooth LE, and RP2350 chip-temperature sensor use the board hardware. The Pico board has no built-in screen, so its text appears in Thonny or another USB serial terminal; the PC terminal controls its window size and colors.
 
-## Install on a Pico 2 W
+`SHUTDOWN` explains how to turn off the board by unplugging its USB power. `REBOOT` restarts after a confirmation. `EXIT` returns to the MicroPython prompt while leaving the board powered.
 
-1. Download the official [MicroPython UF2 for Pico 2 W](https://micropython.org/download/RPI_PICO2_W/).
-2. Connect the board over USB while holding BOOTSEL, then copy the UF2 file to the drive that appears.
-3. Open the board in Thonny or another MicroPython editor.
-4. Copy all files from `Pico-Modular` to the root of the board storage. `main.py` must sit beside the other modules.
-5. Restart the Pico. The shell runs through the USB serial console. Ctrl+C returns to the MicroPython REPL.
+## PC edition
 
-For the single-file edition, upload `Pico-SingleFile/calculanator_os.py` as `main.py`.
+The root [`CalculanatorOS.py`](CalculanatorOS.py) file provides the command shell. [`CalculanatorOS_Desktop.py`](CalculanatorOS_Desktop.py) adds a responsive desktop with calculator, notes, files, themes, and a custom wallpaper picker. Use **Esc** or **F11** to leave full screen.
 
-## Commands
+The shell has `SHUTDOWN` and `REBOOT` with confirmation, `DESKTOP` to reopen the UI, and `SCREEN` to show the detected resolution. `CALC SUDO` requires the app password and an exact confirmation for limited APT and power actions; it does not open an unrestricted root shell.
 
-`HELP`, `HELP_BOOK`, `APPS`, `APP <name>`, `HARDWARE`, `INFO`, `VER`, `DATE`, `UPTIME`, `LED ON/OFF`, `WIFI STATUS/SCAN/CONNECT/DISCONNECT`, `SCAN`, `CONNECT`, `DISCONNECT`, `NETINFO`, `IP`, `BT STATUS/SCAN`, `PKG HELP/LIST/INSTALL`, `NOTE`, `READ.NOTES`, `CALC`, `INSTRUMENTS`, `MATRIX`, `REBOOT`, `EXIT`.
+The [`boot-image/`](boot-image/) folder builds an x86-64 Debian Live ISO for a PC or VirtualBox. It is separate from the Pico firmware. A live session is temporary unless persistence or a writable system disk is configured. See [`boot-image/README.md`](boot-image/README.md) for build and boot instructions.
 
-Notes and installed packages are stored in internal flash. The Wi-Fi password is requested when connecting but is not saved. `BT SCAN` searches for Bluetooth Low Energy (BLE) devices; it does not pair with them. `PKG INSTALL name` uses MicroPython `mip`, asks for confirmation, requires Wi-Fi, and downloads third-party code to the board. Install only packages you trust. The Pico instrument panel reads the RP2350 internal chip sensor. It reports approximate chip temperature, not room temperature; connect an external sensor to measure ambient temperature. The PC build keeps hardware access in simulation mode.
-
-## Limitations
-
-CalculanatorOS is a firmware shell running on MicroPython, not a standalone kernel or a multi-user operating system. The Pico 2 W is a microcontroller and cannot run standard Linux or Windows. `EXIT` closes the shell but does not power off the board.
-
-## Bootable PC/VirtualBox image
-
-The root `CalculanatorOS.py` file is the PC edition. The `boot-image/` folder builds an x86-64 Debian Live ISO that starts CalculanatorOS automatically in its text console. It is a Linux live image with CalculanatorOS as its main application, not a new kernel, and it is separate from the Raspberry Pi Pico firmware.
-
-After the build workflow is pushed to `main`, GitHub Actions builds the ISO when the PC app or image builder changes. Download `CalculanatorOS-live-amd64.iso` and its checksum from the workflow run's Artifacts section. See [`boot-image/README.md`](boot-image/README.md) for details.
+The GitHub Actions workflow builds the ISO when the PC app or image builder changes. It uploads the ISO and checksum as workflow artifacts; it does not automatically create a public release.

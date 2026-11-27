@@ -1,0 +1,5 @@
+"""CalculanatorOS settings for Raspberry Pi Pico 2 W."""
+NAME = "CalculanatorOS"
+VERSION = "0.6.0"
+BUILD = "2026-11-26"
+NOTES_FILE = "notes.txt"

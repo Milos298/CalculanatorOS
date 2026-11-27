@@ -24,9 +24,9 @@ import urllib.parse
 import urllib.error
 import webbrowser
 
-VERSION = "0.6.5 BETA"
-BUILD = "2026.10.10"
-UPDATE_SOURCE_DEFAULT = "https://github.com/Milos298/desktop-tutorial/releases/latest/download/calculanatoros-update.json"
+VERSION = "0.7.0 BETA"
+BUILD = "2026.11.26"
+UPDATE_SOURCE_DEFAULT = "https://github.com/Milos298/CalculanatorOS/releases/latest/download/calculanatoros-update.json"
 LED_STATE = False
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FILES_DIR = os.path.join(BASE_DIR, "CalculanatorOS_Files")
@@ -36,7 +36,10 @@ NOTES_FILE = os.path.join(FILES_DIR, "notes.txt")
 DOWNLOAD_DIR = os.path.join(FILES_DIR, "Downloads")
 PBKDF2_ITERATIONS = 600000
 LEGACY_PBKDF2_ITERATIONS = 120000
-SETTINGS = {"username": "", "theme": "green", "startup": "shell", "update_source": UPDATE_SOURCE_DEFAULT}
+SETTINGS = {
+    "username": "", "theme": "green", "startup": "desktop",
+    "update_source": UPDATE_SOURCE_DEFAULT, "wallpaper": "",
+}
 CURRENT_USER = ""
 CURRENT_COLOR = "07"
 DEFAULT_COLOR = "07"
@@ -367,10 +370,12 @@ def load_settings():
         if isinstance(stored, dict):
             if isinstance(stored.get("username"), str):
                 settings["username"] = stored["username"][:32]
-            if stored.get("theme") in ("green", "amber", "plain"):
+            if stored.get("theme") in ("green", "amber", "plain", "ocean", "violet"):
                 settings["theme"] = stored["theme"]
-            if stored.get("startup") in ("shell", "menu"):
+            if stored.get("startup") in ("shell", "menu", "desktop"):
                 settings["startup"] = stored["startup"]
+            if isinstance(stored.get("wallpaper"), str):
+                settings["wallpaper"] = stored["wallpaper"][:2048]
             if isinstance(stored.get("update_source"), str):
                 try:
                     settings["update_source"] = normalize_update_source(stored["update_source"])
@@ -404,31 +409,208 @@ def save_settings():
 
 
 def settings_command(argument=""):
-    parts = argument.strip().split()
+    parts = argument.strip().split(maxsplit=1)
     if not parts:
         print("User:", SETTINGS.get("username") or "(not set)")
         print("Theme:", SETTINGS["theme"])
         print("Startup:", SETTINGS["startup"])
         print("Update source:", SETTINGS.get("update_source") or "(not configured)")
-        print("Usage: SETTINGS | SETTINGS THEME <green|amber|plain> | SETTINGS STARTUP <shell|menu>")
+        print("Wallpaper:", SETTINGS.get("wallpaper") or "CalculanatorOS default")
+        print("Usage: SETTINGS THEME <green|amber|plain|ocean|violet>")
+        print("       SETTINGS STARTUP <shell|menu|desktop> | SETTINGS WALLPAPER <path|DEFAULT>")
         return
     if len(parts) != 2:
-        print("Usage: SETTINGS THEME <green|amber|plain> or SETTINGS STARTUP <shell|menu>")
+        print("Usage: SETTINGS THEME <name>, SETTINGS STARTUP <name>, or SETTINGS WALLPAPER <path|DEFAULT>")
         return
-    key, value = parts[0].lower(), parts[1].lower()
-    if key == "theme" and value in ("green", "amber", "plain"):
-        SETTINGS["theme"] = value
-    elif key == "startup" and value in ("shell", "menu"):
-        SETTINGS["startup"] = value
+    key, value = parts[0].lower(), parts[1].strip()
+    normalized = value.lower()
+    if key == "theme" and normalized in ("green", "amber", "plain", "ocean", "violet"):
+        SETTINGS["theme"] = normalized
+    elif key == "startup" and normalized in ("shell", "menu", "desktop"):
+        SETTINGS["startup"] = normalized
+    elif key == "wallpaper":
+        wallpaper_command(value)
+        return
     else:
-        print("Invalid setting. Use theme green/amber/plain or startup shell/menu.")
+        print("Invalid setting. Use a listed theme, startup shell/menu/desktop, or a wallpaper path.")
         return
     try:
         save_settings()
-        suffix = " (applies after restart)" if key == "theme" else ""
+        suffix = " (applies when the desktop starts)" if key == "theme" else " (applies at next start)" if key == "startup" else ""
         print(key.title(), "saved as", value + suffix + ".")
     except OSError as error:
         print("Could not save settings:", error)
+
+
+def detected_screen_size():
+    """Return the active display resolution when the host exposes it."""
+    if os.name == "nt":
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+        except Exception:
+            return None
+    if os.environ.get("DISPLAY") and shutil.which("xrandr"):
+        try:
+            result = subprocess.run(["xrandr", "--current"], capture_output=True,
+                                    text=True, check=False, timeout=5)
+            if result.returncode == 0:
+                current = re.search(r"Screen\s+\d+:\s+current\s+(\d+)\s+x\s+(\d+)", result.stdout)
+                if current:
+                    return int(current.group(1)), int(current.group(2))
+                for line in result.stdout.splitlines():
+                    if " connected" not in line:
+                        continue
+                    match = re.search(r"\b(\d+)x(\d+)\+\d+\+\d+", line)
+                    if match:
+                        return int(match.group(1)), int(match.group(2))
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    if shutil.which("fbset"):
+        try:
+            result = subprocess.run(["fbset", "-s"], capture_output=True,
+                                    text=True, check=False, timeout=5)
+            match = re.search(r"geometry\s+(\d+)\s+(\d+)", result.stdout)
+            if result.returncode == 0 and match:
+                return int(match.group(1)), int(match.group(2))
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return None
+
+
+def screen_command(argument=""):
+    action = argument.strip().upper()
+    if action in ("DESKTOP", "GUI", "AUTO"):
+        open_desktop()
+        return
+    if action in ("TERMINAL", "WINDOW"):
+        terminal_window()
+        return
+    if action and action not in ("INFO", "SIZE"):
+        print("Usage: SCREEN [INFO|DESKTOP|TERMINAL]")
+        return
+    size = detected_screen_size()
+    terminal = shutil.get_terminal_size(fallback=(80, 24))
+    if size:
+        print("Detected display:", str(size[0]) + "x" + str(size[1]))
+    else:
+        print("Display resolution is not exposed in this text console.")
+    print("Current terminal:", terminal.columns, "columns x", terminal.lines, "rows")
+    print("The graphical desktop and its terminal window adapt to the detected screen.")
+    print("Use SCREEN DESKTOP for the desktop or SCREEN TERMINAL to open a fitted terminal window.")
+
+
+def wallpaper_command(argument=""):
+    value = argument.strip().strip('"').strip("'")
+    if not value:
+        print("Current wallpaper:", SETTINGS.get("wallpaper") or "CalculanatorOS default")
+        print("Usage: WALLPAPER <image path> | WALLPAPER DEFAULT")
+        print("The visual picker is in DESKTOP > Personalize.")
+        return
+    if value.upper() in ("DEFAULT", "RESET"):
+        SETTINGS["wallpaper"] = ""
+    else:
+        path = os.path.abspath(os.path.expanduser(value))
+        if not os.path.isfile(path):
+            print("Wallpaper file does not exist:", path)
+            return
+        try:
+            if os.path.getsize(path) > 32 * 1024 * 1024:
+                print("Choose an image smaller than 32 MB.")
+                return
+        except OSError as error:
+            print("Could not read wallpaper file:", error)
+            return
+        if os.path.splitext(path)[1].lower() not in (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"):
+            print("Use a PNG, JPG, GIF, BMP, or WEBP image.")
+            return
+        SETTINGS["wallpaper"] = path
+    try:
+        save_settings()
+        print("Wallpaper preference saved. Open DESKTOP to see it.")
+    except OSError as error:
+        print("Could not save wallpaper preference:", error)
+
+
+def open_desktop():
+    """Launch the responsive Tk desktop, starting X from a text-only Linux console."""
+    script = os.path.join(BASE_DIR, "CalculanatorOS_Desktop.py")
+    if not os.path.isfile(script):
+        print("Desktop app is missing. Add CalculanatorOS_Desktop.py beside this file.")
+        return
+    if os.name == "nt":
+        try:
+            env = os.environ.copy()
+            env["CALCULANATOROS_FROM_DESKTOP"] = "1"
+            pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+            interpreter = pythonw if os.path.isfile(pythonw) else sys.executable
+            subprocess.Popen([interpreter, script], cwd=BASE_DIR, env=env)
+        except OSError as error:
+            print("Could not open the desktop:", error)
+        return
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        try:
+            env = os.environ.copy()
+            env["CALCULANATOROS_FROM_DESKTOP"] = "1"
+            subprocess.Popen([sys.executable, script], cwd=BASE_DIR, start_new_session=True, env=env)
+        except OSError as error:
+            print("Could not open the desktop:", error)
+        return
+    startx = shutil.which("startx")
+    launcher = shutil.which("calculanatoros-desktop")
+    if not startx or not launcher:
+        print("The graphical desktop is not installed in this PC image. Rebuild the ISO with the desktop packages.")
+        return
+    print("Starting the graphical desktop. Press Esc or F11 to leave full screen.")
+    try:
+        env = os.environ.copy()
+        env["CALCULANATOROS_FROM_DESKTOP"] = "1"
+        result = subprocess.run([startx, launcher, "--", ":0", "-nolisten", "tcp"],
+                                cwd=BASE_DIR, check=False, timeout=24 * 60 * 60, env=env)
+        if result.returncode:
+            print("Desktop closed with exit code", result.returncode)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print("Could not start the graphical desktop:", error)
+
+
+def terminal_window():
+    """Open a terminal window sized from the current display resolution."""
+    if os.name == "nt":
+        try:
+            env = os.environ.copy()
+            env["CALCULANATOROS_FROM_DESKTOP"] = "1"
+            subprocess.Popen([sys.executable, os.path.abspath(__file__)], cwd=BASE_DIR,
+                             creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0), env=env)
+        except OSError as error:
+            print("Could not open another terminal:", error)
+        return
+    if not os.environ.get("DISPLAY"):
+        print("You are already in the fitted text terminal. Use DESKTOP to open the graphical desktop.")
+        return
+    terminal = shutil.which("xterm") or shutil.which("x-terminal-emulator")
+    if not terminal:
+        print("No terminal window app is installed. Add xterm to the Debian image.")
+        return
+    size = detected_screen_size()
+    width, height = size or (1280, 800)
+    columns = max(40, min(170, (width - 48) // 9))
+    rows = max(12, min(55, (height - 110) // 18))
+    terminal_colors = {
+        "green": "#52e0a1", "amber": "#ffc36b", "plain": "#dce7f5",
+        "ocean": "#6ad5ff", "violet": "#c7a0ff",
+    }
+    foreground = terminal_colors.get(SETTINGS.get("theme"), terminal_colors["green"])
+    try:
+        env = os.environ.copy()
+        env["CALCULANATOROS_FROM_DESKTOP"] = "1"
+        subprocess.Popen([terminal, "-geometry", f"{columns}x{rows}+24+70",
+                          "-fa", "DejaVu Sans Mono", "-fs", "11", "-bg", "#07121d",
+                          "-fg", foreground, "-T", "CalculanatorOS Terminal",
+                          "-e", sys.executable, os.path.abspath(__file__)],
+                         cwd=BASE_DIR, start_new_session=True, env=env)
+    except OSError as error:
+        print("Could not open another terminal:", error)
 
 
 def append_note(text):
@@ -637,8 +819,10 @@ def notes_app():
 
 def settings_app():
     print("Settings app")
-    print("Current theme:", SETTINGS["theme"], "| Startup:", SETTINGS["startup"])
-    print("Use SETTINGS THEME <green|amber|plain> or SETTINGS STARTUP <shell|menu>.")
+    print("Theme:", SETTINGS["theme"], "| Startup:", SETTINGS["startup"])
+    print("Wallpaper:", SETTINGS.get("wallpaper") or "CalculanatorOS default")
+    print("Use SETTINGS THEME <name>, SETTINGS STARTUP <shell|menu|desktop>, or WALLPAPER <path|DEFAULT>.")
+    print("For visual controls, use DESKTOP and open Settings.")
 
 
 UNIT_GROUPS = {
@@ -1110,6 +1294,30 @@ def start_url(value):
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         print("Only valid HTTP or HTTPS website URLs can be opened.")
         return
+    if parsed.username is not None or parsed.password is not None:
+        print("For safety, URLs containing a username or password cannot be opened.")
+        return
+    if os.name != "nt":
+        gui_browser = next((shutil.which(name) for name in
+                            ("firefox-esr", "firefox", "chromium", "chromium-browser", "brave-browser")
+                            if shutil.which(name)), None)
+        if os.environ.get("DISPLAY") and gui_browser:
+            try:
+                subprocess.Popen([gui_browser, value], start_new_session=True)
+                print("Opened in the graphical browser:", value)
+            except OSError as error:
+                print("Could not open the graphical browser:", error)
+            return
+        text_browser = shutil.which("lynx")
+        if text_browser:
+            print("Opening in the text browser. Press q to return.")
+            try:
+                result = subprocess.run([text_browser, value], check=False, timeout=300)
+                if result.returncode:
+                    print("Text browser exited with code", result.returncode)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                print("Text browser could not open the website:", error)
+            return
     try:
         if webbrowser.open(value):
             print("Opened in the default browser:", value)
@@ -1117,6 +1325,250 @@ def start_url(value):
             print("Could not open a browser. URL:", value)
     except Exception as error:
         print("Could not open the website:", type(error).__name__)
+
+
+def run_power_action(action):
+    """Request a real host shutdown or restart; never execute a free-form command."""
+    action = action.strip().upper()
+    if action not in ("SHUTDOWN", "REBOOT"):
+        print("Use SHUTDOWN or REBOOT.")
+        return False
+    if os.name == "nt":
+        command = [shutil.which("shutdown.exe") or "shutdown.exe",
+                   "/s" if action == "SHUTDOWN" else "/r", "/t", "0"]
+    else:
+        systemctl = shutil.which("systemctl")
+        command = [systemctl, "poweroff" if action == "SHUTDOWN" else "reboot"] if systemctl else [
+            shutil.which("shutdown") or "shutdown", "-h" if action == "SHUTDOWN" else "-r", "now"
+        ]
+        if hasattr(os, "geteuid") and os.geteuid() != 0:
+            sudo = shutil.which("sudo")
+            if not sudo:
+                print("This action needs system permission. Use the CALC SUDO command on Debian.")
+                return False
+            command.insert(0, sudo)
+    try:
+        result = subprocess.run(command, check=False, timeout=30, capture_output=True, text=True)
+        if result.returncode:
+            message = (result.stderr or result.stdout or "").strip()
+            print(action.title(), "did not start (exit code", str(result.returncode) + ").",
+                  message or "Check system permissions.")
+            if os.name != "nt":
+                print("A Debian sudo password is separate from your CalculanatorOS password.")
+            return False
+        print(action.title(), "request sent to the operating system.")
+        return True
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print("Could not request", action.lower() + ":", error)
+        return False
+
+
+def shutdown_command(action):
+    action = action.strip().upper()
+    if action not in ("SHUTDOWN", "REBOOT"):
+        print("Use SHUTDOWN or REBOOT.")
+        return
+    message = "This will power off the computer." if action == "SHUTDOWN" else "This will restart the computer."
+    print(message)
+    if input("Type " + action + " to confirm: ").strip().upper() != action:
+        print("Power action cancelled.")
+        return
+    run_power_action(action)
+
+
+def verify_calculanator_password(password, account_file=ACCOUNT_FILE):
+    """Re-check the local app password before the restricted CALC SUDO actions."""
+    try:
+        with open(account_file, "r", encoding="utf-8") as file:
+            account = json.load(file)
+        if not isinstance(account, dict):
+            return False
+        username = account.get("username")
+        salt = bytes.fromhex(account["salt"])
+        stored_hash = account["password_hash"]
+        iterations = account.get("iterations", LEGACY_PBKDF2_ITERATIONS)
+        if (not isinstance(username, str) or not CURRENT_USER
+                or not hmac.compare_digest(username.casefold(), CURRENT_USER.casefold())
+                or len(salt) != 16 or not isinstance(stored_hash, str) or len(stored_hash) != 64
+                or iterations not in (LEGACY_PBKDF2_ITERATIONS, PBKDF2_ITERATIONS)):
+            return False
+        candidate = password_hash(password, salt, iterations)
+        return hmac.compare_digest(candidate, stored_hash)
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
+
+
+def _run_apt_action(action, package=""):
+    if os.name == "nt" or not shutil.which("apt-get"):
+        print("APT is available only in the Debian PC edition.")
+        return
+    sudo = shutil.which("sudo")
+    command = ["apt-get"]
+    if hasattr(os, "geteuid") and os.geteuid() != 0:
+        if not sudo:
+            print("The Debian system does not have sudo installed.")
+            return
+        command.insert(0, sudo)
+    if action == "UPDATE":
+        command += ["update"]
+    else:
+        command += ["install", "--yes", package]
+    print("This changes the current Debian system. A live session loses the package at shutdown.")
+    if os.name != "nt" and sudo:
+        print("If sudo asks for a password, enter the Debian account password, not the app password.")
+    try:
+        result = subprocess.run(command, check=False, timeout=900)
+        if result.returncode:
+            print("APT failed with exit code", result.returncode, "or was cancelled.")
+        else:
+            print("APT", action.lower(), "completed.")
+    except subprocess.TimeoutExpired:
+        print("APT stopped after 15 minutes. Check the network and package manager state.")
+    except OSError as error:
+        print("Could not run APT:", error)
+
+
+def calc_sudo_command(argument=""):
+    """Password-confirm a small allow-list instead of exposing an arbitrary root shell."""
+    request = argument.strip()
+    if not request or request.upper() == "HELP":
+        print("CALC SUDO SHUTDOWN | CALC SUDO REBOOT | CALC SUDO APT UPDATE")
+        print("CALC SUDO APT INSTALL <package> — each action requires the app password and an exact confirmation.")
+        return
+    upper = request.upper()
+    if upper in ("SHUTDOWN", "REBOOT"):
+        action = upper
+        operation = ("POWER", action)
+    elif upper == "APT UPDATE":
+        action = "APT UPDATE"
+        operation = ("APT", "UPDATE")
+    else:
+        match = re.fullmatch(r"APT\s+INSTALL\s+([A-Za-z0-9][A-Za-z0-9.+_-]{0,79})", request, re.IGNORECASE)
+        if not match:
+            print("Allowed actions: SHUTDOWN, REBOOT, APT UPDATE, or APT INSTALL <package>.")
+            print("No arbitrary shell or root commands are accepted.")
+            return
+        package = match.group(1)
+        action = "APT INSTALL " + package
+        operation = ("APT", "INSTALL", package)
+    supplied = getpass.getpass("CalculanatorOS password for CALC SUDO: ")
+    if not verify_calculanator_password(supplied):
+        print("Incorrect app password. No system action was run.")
+        return
+    confirmation = "CONFIRM " + action.upper()
+    if input("Type " + confirmation + " to continue: ").strip().upper() != confirmation:
+        print("System action cancelled.")
+        return
+    if operation[0] == "POWER":
+        run_power_action(operation[1])
+    else:
+        _run_apt_action(operation[1], operation[2] if len(operation) > 2 else "")
+
+
+def debian_command(name, argument=""):
+    """Run a short allow-list of read-only Debian utilities without a shell."""
+    command = name.strip().upper()
+    target = argument.strip().strip('"').strip("'")
+    if os.name == "nt":
+        if command == "WHOAMI":
+            print(getpass.getuser())
+        elif command == "PWD":
+            print(os.getcwd())
+        elif command == "LS":
+            path = target or "."
+            try:
+                for entry in sorted(os.listdir(path), key=str.casefold):
+                    print(entry)
+            except OSError as error:
+                print("Could not list folder:", error)
+        elif command == "UNAME":
+            print(platform.platform())
+        elif command == "DF":
+            try:
+                usage = shutil.disk_usage(target or BASE_DIR)
+                print("Disk free:", round(usage.free / (1024 ** 3), 2), "GiB of",
+                      round(usage.total / (1024 ** 3), 2), "GiB")
+            except OSError as error:
+                print("Disk information unavailable:", error)
+        elif command == "FREE":
+            try:
+                import ctypes
+
+                class MemoryStatus(ctypes.Structure):
+                    _fields_ = [
+                        ("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                        ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                    ]
+
+                memory = MemoryStatus()
+                memory.dwLength = ctypes.sizeof(memory)
+                if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(memory)):
+                    raise OSError("Windows could not report memory status.")
+                total = memory.ullTotalPhys / (1024 ** 3)
+                available = memory.ullAvailPhys / (1024 ** 3)
+                print("Memory:", round(total - available, 2), "GiB used of", round(total, 2),
+                      "GiB;", round(available, 2), "GiB available")
+            except (AttributeError, OSError, TypeError, ValueError) as error:
+                print("Memory information unavailable:", error)
+        elif command == "UPTIME":
+            try:
+                import ctypes
+                get_tick_count = ctypes.windll.kernel32.GetTickCount64
+                get_tick_count.restype = ctypes.c_ulonglong
+                seconds = int(get_tick_count() // 1000)
+                days, seconds = divmod(seconds, 86400)
+                hours, seconds = divmod(seconds, 3600)
+                minutes = seconds // 60
+                print("Windows system uptime:", days, "days,", hours, "hours,", minutes, "minutes")
+            except (AttributeError, OSError, TypeError, ValueError) as error:
+                print("System uptime unavailable:", error)
+        elif command in ("IP", "NETINFO"):
+            result = subprocess.run(["ipconfig"], check=False, timeout=15)
+            if result.returncode:
+                print("Network information failed with exit code", result.returncode)
+        elif command == "PS":
+            result = subprocess.run(["tasklist"], check=False, timeout=20)
+            if result.returncode:
+                print("Process list failed with exit code", result.returncode)
+        else:
+            print(command, "is a Debian command. Use it in the Debian PC edition.")
+        return
+
+    if command == "LS":
+        args = ["ls", "-lah", "--", target or "."]
+    elif command == "IP" or command == "NETINFO":
+        args = ["ip", "-brief", "address"]
+    elif command == "PS":
+        args = ["ps", "-eo", "pid,comm,%cpu,%mem", "--sort=-%cpu"]
+    else:
+        mapping = {
+            "WHOAMI": ["whoami"], "PWD": ["pwd"], "UNAME": ["uname", "-a"],
+            "DF": ["df", "-h"], "FREE": ["free", "-h"], "UPTIME": ["uptime", "-p"],
+        }
+        args = mapping.get(command)
+    if not args:
+        print("Unknown Debian command. Use LINUX HELP.")
+        return
+    if not shutil.which(args[0]):
+        print("This Debian utility is not installed:", args[0])
+        return
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, check=False, timeout=20)
+        output = result.stdout or result.stderr
+        if command in ("IP", "NETINFO") and result.returncode == 0:
+            route = subprocess.run(["ip", "route"], capture_output=True, text=True,
+                                   check=False, timeout=10)
+            output += route.stdout or route.stderr
+        if command == "PS" and result.returncode == 0:
+            output = "\n".join(output.splitlines()[:21]) + "\n... (showing 20 processes)\n"
+        print(output.strip() or ("Command completed." if result.returncode == 0 else "No output."))
+        if result.returncode:
+            print("Command exited with code", result.returncode)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print("Could not run", command + ":", error)
 
 
 def calculator_mode(expression=""):
@@ -1178,37 +1630,97 @@ def instruments():
 
 
 def wifi_command(command):
-    """PC adapter: use Windows netsh; Pico firmware has its own Wi-Fi driver."""
-    if os.name != "nt":
-        print("This Wi-Fi test command uses Windows. Pico firmware has its own Wi-Fi driver.")
-        return
-    original_command = command.strip()
-    command = original_command.upper()
-    if command == "WIFI" or command == "WIFI PROFILES":
-        subprocess.run(["netsh", "wlan", "show", "profiles"], check=False)
-    elif command in ("WIFI STATUS", "NETINFO WIFI"):
-        subprocess.run(["netsh", "wlan", "show", "interfaces"], check=False)
-    elif command in ("SCAN", "WIFI SCAN"):
-        subprocess.run(["netsh", "wlan", "show", "networks"], check=False)
-    elif command in ("CONNECT", "WIFI CONNECT") or command.startswith("WIFI CONNECT "):
-        wifi = original_command[len("WIFI CONNECT "):].strip() if command.startswith("WIFI CONNECT ") else ""
-        wifi = wifi or input("Saved Wi-Fi profile name (SSID): ").strip()
-        if wifi:
-            subprocess.run(["netsh", "wlan", "connect", f'name="{wifi}"'], check=False)
-    elif command in ("DISCONNECT", "WIFI DISCONNECT"):
-        subprocess.run(["netsh", "wlan", "disconnect"], check=False)
+    """Use the native Windows or Debian Wi-Fi tools; Pico has separate firmware."""
+    original = re.sub(r"\s+", " ", command.strip())
+    upper = original.upper()
+    if os.name == "nt":
+        if upper in ("WIFI", "WIFI PROFILES"):
+            args = ["netsh", "wlan", "show", "profiles"]
+        elif upper in ("WIFI STATUS", "NETINFO WIFI"):
+            args = ["netsh", "wlan", "show", "interfaces"]
+        elif upper in ("SCAN", "WIFI SCAN"):
+            args = ["netsh", "wlan", "show", "networks"]
+        elif upper in ("CONNECT", "WIFI CONNECT") or upper.startswith("WIFI CONNECT "):
+            ssid = original[12:].strip() if upper.startswith("WIFI CONNECT ") else ""
+            ssid = ssid or input("Saved Wi-Fi profile name (SSID): ").strip()
+            if not ssid:
+                print("No Wi-Fi profile name was entered.")
+                return
+            args = ["netsh", "wlan", "connect", "name=" + ssid]
+        elif upper in ("DISCONNECT", "WIFI DISCONNECT"):
+            args = ["netsh", "wlan", "disconnect"]
+        else:
+            print("Use WIFI PROFILES, WIFI STATUS, WIFI SCAN, WIFI CONNECT [SSID], or WIFI DISCONNECT.")
+            return
+    else:
+        if not shutil.which("nmcli"):
+            print("Debian Wi-Fi tools are missing. Add them with CALC SUDO APT INSTALL network-manager.")
+            return
+        if upper in ("WIFI", "WIFI PROFILES"):
+            args = ["nmcli", "--fields", "NAME,TYPE,DEVICE", "connection", "show"]
+        elif upper in ("WIFI STATUS", "NETINFO WIFI"):
+            subprocess.run(["nmcli", "radio", "wifi"], check=False, timeout=10)
+            args = ["nmcli", "device", "status"]
+        elif upper in ("SCAN", "WIFI SCAN"):
+            subprocess.run(["nmcli", "device", "wifi", "rescan"], check=False, timeout=15)
+            args = ["nmcli", "--fields", "IN-USE,SSID,SECURITY,SIGNAL", "device", "wifi", "list"]
+        elif upper in ("CONNECT", "WIFI CONNECT") or upper.startswith("WIFI CONNECT "):
+            ssid = original[12:].strip() if upper.startswith("WIFI CONNECT ") else ""
+            ssid = ssid or input("Wi-Fi network name (SSID): ").strip()
+            if not ssid or any(ord(character) < 32 for character in ssid):
+                print("Enter a valid Wi-Fi network name.")
+                return
+            args = ["nmcli", "--ask", "device", "wifi", "connect", ssid]
+        elif upper in ("DISCONNECT", "WIFI DISCONNECT"):
+            try:
+                listing = subprocess.run(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device", "status"],
+                                         check=False, capture_output=True, text=True, timeout=10)
+                device = next((line.split(":", 2)[0] for line in listing.stdout.splitlines()
+                               if len(line.split(":")) >= 3 and line.split(":")[1] == "wifi"
+                               and line.split(":")[2] == "connected"), "")
+            except (OSError, subprocess.TimeoutExpired) as error:
+                print("Could not find an active Wi-Fi adapter:", error)
+                return
+            if not device:
+                print("No Wi-Fi connection is active.")
+                return
+            args = ["nmcli", "device", "disconnect", device]
+        else:
+            print("Use WIFI PROFILES, WIFI STATUS, WIFI SCAN, WIFI CONNECT [SSID], or WIFI DISCONNECT.")
+            return
+    try:
+        result = subprocess.run(args, check=False, timeout=90)
+        if result.returncode:
+            print("Wi-Fi command failed with exit code", result.returncode,
+                  "Check that the adapter and its network service are available.")
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print("Wi-Fi command could not complete:", error)
 
 
 def bluetooth_command(command):
-    command = command.upper()
+    command = re.sub(r"\s+", " ", command.strip().upper())
     if command in ("BLUETOOTH", "BT", "BT STATUS"):
-        if os.name != "nt":
-            print("Check the Bluetooth adapter status in your system settings.")
+        if os.name == "nt":
+            args = ["powershell", "-NoProfile", "-Command",
+                    "Get-PnpDevice -Class Bluetooth | Select-Object Status,FriendlyName | Format-Table -AutoSize"]
+        elif shutil.which("bluetoothctl"):
+            args = ["bluetoothctl", "show"]
+        else:
+            print("Debian Bluetooth tools are missing. Add them with CALC SUDO APT INSTALL bluez.")
             return
-        subprocess.run([
-            "powershell", "-NoProfile", "-Command",
-            "Get-PnpDevice -Class Bluetooth | Select-Object Status,FriendlyName | Format-Table -AutoSize"
-        ], check=False)
+        try:
+            result = subprocess.run(args, check=False, timeout=20)
+            if result.returncode:
+                print("Bluetooth status command failed with exit code", result.returncode)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            print("Could not read Bluetooth status:", error)
+    elif command in ("BT DEVICES", "BLUETOOTH DEVICES") and os.name != "nt":
+        if not shutil.which("bluetoothctl"):
+            print("Install Debian Bluetooth tools with CALC SUDO APT INSTALL bluez.")
+            return
+        result = subprocess.run(["bluetoothctl", "devices"], check=False, timeout=20)
+        if result.returncode:
+            print("Bluetooth device list failed with exit code", result.returncode)
     elif command in ("BT SCAN", "BLUETOOTH SCAN"):
         try:
             import asyncio
@@ -1220,9 +1732,14 @@ def bluetooth_command(command):
                 print("-", device.name or "(unnamed)", device.address,
                       "RSSI", getattr(device, "rssi", "?"), "dBm")
         except ImportError:
-            print("BLE scan on PC requires Bleak. Install it with: py -m pip install bleak")
+            if os.name == "nt":
+                print("BLE scan on Windows requires Bleak. Install it with: py -m pip install bleak")
+            else:
+                print("BLE scan on Debian requires Bleak. Add it with CALC SUDO APT INSTALL python3-bleak.")
         except Exception as error:
             print("Bluetooth scan failed:", error)
+    else:
+        print("Use BT STATUS, BT DEVICES, or BT SCAN.")
 
 
 def package_command(command):
@@ -1282,6 +1799,28 @@ def instrument_command(command):
         print("SIMULATED LED is off (PC mode).")
     elif command == "LED":
         print("SIMULATED LED is", "on." if LED_STATE else "off.")
+    elif command.startswith("LED"):
+        print("Usage: LED [ON|OFF]")
+
+
+def system_tools_app():
+    commands = ("WHOAMI", "PWD", "LS", "UNAME", "DF", "FREE", "PS", "IP", "UPTIME")
+    while True:
+        print("\n=== SYSTEM TOOLS ===")
+        for number, name in enumerate(commands, 1):
+            print(str(number) + ".", name)
+        print("0. Back")
+        choice = input("System> ").strip().upper()
+        if choice in ("0", "BACK", "EXIT"):
+            return
+        if choice.isdigit() and 1 <= int(choice) <= len(commands):
+            name = commands[int(choice) - 1]
+        elif choice in commands:
+            name = choice
+        else:
+            print("Choose a command name, number, or 0.")
+            continue
+        debian_command(name)
 
 
 register_app("calculator", "Evaluate arithmetic expressions.", calculator_mode)
@@ -1294,15 +1833,19 @@ register_app("password-generator", "Create a random password; it is not saved.",
 register_app("stopwatch", "Measure elapsed time.", stopwatch)
 register_app("files", "View the safe file tree for the OS sandbox.", files_app)
 register_app("editor", "Edit Python source with syntax checks and automatic backups.", edit_os_app)
+register_app("desktop", "Open the responsive graphical desktop.", open_desktop)
+register_app("system", "Open common read-only Debian and PC system commands.", system_tools_app)
 
 
 HELP_COMMANDS = (
-    "HELP | HELP_BOOK | APPS | APP <name> | MENU | EDITOS | SETTINGS [THEME|STARTUP] | COLOR [code] | HARDWARE | "
+    "HELP | HELP_BOOK | APPS | APP <name> | MENU | EDITOS | DESKTOP | TERMINAL | SCREEN [INFO|DESKTOP|TERMINAL] | "
+    "SETTINGS [THEME|STARTUP|WALLPAPER] | WALLPAPER <path|DEFAULT> | COLOR [code] | HARDWARE | "
     "INFO | MORE INFO | ABOUT | CREATOR | VER | VERSION | DATE | UPTIME | CLEAR | "
-    "CALC [expression] | INSTRUMENTS | INSTRUMENT_PANEL | LED [ON|OFF] | WIFI | WIFI PROFILES | "
-    "WIFI STATUS | WIFI SCAN | WIFI CONNECT [SSID] | WIFI DISCONNECT | BLUETOOTH | BT STATUS | BT SCAN | "
-    "PKG HELP | PKG LIST | PKG INSTALL <name> | UPDATE [CHECK|INSTALL] | UPDATE SOURCE <URL> | "
-    "PING | NETINFO | IP | NOTE [text] | READ.NOTES | "
+    "CALC [expression] | CALC SUDO <safe action> | SUDO <safe action> | SHUTDOWN | REBOOT | "
+    "INSTRUMENTS | LED [ON|OFF] | WIFI [PROFILES|STATUS|SCAN|CONNECT|DISCONNECT] | "
+    "BLUETOOTH | BT STATUS | BT DEVICES | BT SCAN | PKG HELP | PKG LIST | PKG INSTALL <name> | "
+    "APT UPDATE | APT INSTALL <name> | LINUX HELP | WHOAMI | PWD | LS [path] | UNAME | DF | FREE | PS | "
+    "UPDATE [CHECK|INSTALL] | UPDATE SOURCE <URL> | PING | NETINFO | IP | NOTE [text] | READ.NOTES | "
     "MATRIX | FILE TREE | TREE | DOWNLOAD | CAL.APT INSTALL | START <website> | PASSWD | SECURITY | EXIT | QUIT"
 )
 HELP_BOOK = (
@@ -1311,34 +1854,42 @@ HELP_BOOK = (
     "APPS or MENU — open the app launcher. Add apps with register_app(name, description, callback).",
     "APP <name> — launch an app by name, for example APP calculator.",
     "EDITOS — open the built-in Python editor for files beside the desktop OS; syntax checks and backups are automatic.",
-    "SETTINGS — show the saved username, theme, and startup preference.",
-    "SETTINGS THEME <green|amber|plain> — save the terminal accent preference.",
-    "SETTINGS STARTUP <shell|menu> — choose the first screen at startup.",
+    "SETTINGS — show saved user, theme, startup, wallpaper, and update preferences.",
+    "SETTINGS THEME <name> — save green, amber, plain, ocean, or violet desktop and terminal colors.",
+    "SETTINGS STARTUP <shell|menu|desktop> — choose the first screen after sign-in.",
+    "SETTINGS WALLPAPER <path|DEFAULT> or WALLPAPER <path|DEFAULT> — set or reset the desktop image.",
+    "DESKTOP — open the responsive graphical desktop. Esc/F11 leaves full screen; VirtualBox uses Right Ctrl as its host key.",
+    "TERMINAL — open another terminal sized from the detected display; on a text console the current terminal is already fitted.",
+    "SCREEN [INFO|DESKTOP|TERMINAL] — show display and terminal dimensions or open a screen-fitted desktop/terminal.",
     "COLOR [code] — change terminal colors like Windows CMD, for example COLOR 0A; COLOR alone restores startup colors.",
     "HARDWARE — explain whether this PC build is simulating or accessing hardware.",
     "INFO, MORE INFO, ABOUT, CREATOR — show project and build information.",
     "VER or VERSION — show the CalculanatorOS version.",
     "DATE — show the computer's date and time.",
-    "UPTIME — show how long this desktop test session has been running.",
+    "UPTIME — show Debian system uptime or the Windows CalculanatorOS session uptime.",
     "CLEAR — clear the terminal window.",
     "CALC [expression] — safely calculate +, -, *, / and parentheses (maximum 256 characters).",
     "INSTRUMENTS or INSTRUMENT_PANEL — open the PC simulation panel.",
     "LED [ON|OFF] — view or change the simulated PC LED state.",
-    "WIFI or WIFI PROFILES — list saved Windows Wi-Fi profile names.",
-    "WIFI STATUS — show the Windows Wi-Fi adapter status.",
-    "WIFI SCAN — list nearby Wi-Fi networks.",
-    "WIFI CONNECT [SSID] — connect Windows to a saved profile.",
-    "WIFI DISCONNECT — disconnect the Windows Wi-Fi adapter.",
-    "BLUETOOTH or BT STATUS — show Bluetooth adapters on Windows.",
-    "BT SCAN — scan for Bluetooth Low Energy devices; PC requires Bleak.",
+    "WIFI PROFILES/STATUS/SCAN/CONNECT/DISCONNECT — use Windows netsh or Debian NetworkManager tools.",
+    "BLUETOOTH or BT STATUS — show the Windows adapter or Debian controller status.",
+    "BT DEVICES — list paired/known Bluetooth devices on Debian.",
+    "BT SCAN — scan for Bluetooth Low Energy devices; Debian requires BlueZ and python3-bleak.",
     "PKG HELP — show package command help.",
     "PKG LIST — list files on a connected Pico using mpremote.",
     "PKG INSTALL <name> — after confirmation, install a third-party MicroPython package on Pico.",
     "UPDATE or UPDATE INSTALL — check the configured GitHub release manifest and, after confirmation, verify and install the desktop update.",
     "UPDATE CHECK — check for a newer desktop version without installing it.",
     "UPDATE SOURCE <GitHub repository URL> — save the HTTPS release source; releases must include calculanatoros-update.json and CalculanatorOS.py assets.",
-    "PING — send one ping to a host entered by the user.",
-    "NETINFO or IP — show Windows network configuration.",
+    "PING — send one ping with the correct Windows or Debian count option.",
+    "NETINFO or IP — show addresses and routes on Debian, or Windows network configuration.",
+    "WHOAMI, PWD, LS [path], UNAME, DF, FREE, PS, UPTIME — common read-only system commands.",
+    "LINUX HELP — show the supported cross-platform system command list.",
+    "APT UPDATE or APT INSTALL <package> — perform a Debian package action after password and exact-command confirmation.",
+    "CALC SUDO <safe action> — re-check the CalculanatorOS password and require an exact confirmation before SHUTDOWN, REBOOT, or APT actions; no arbitrary root shell is provided.",
+    "SUDO <safe action> — alias for CALC SUDO. Linux sudo may separately ask for the Debian account password.",
+    "SHUTDOWN or POWER OFF — request system power-off after typing SHUTDOWN to confirm.",
+    "REBOOT or RESTART — request system restart after typing REBOOT to confirm.",
     "NOTE [text] — append a note to CalculanatorOS_Files/notes.txt.",
     "READ.NOTES — read notes from CalculanatorOS_Files/notes.txt.",
     "MATRIX — show a short text animation.",
@@ -1348,7 +1899,7 @@ HELP_BOOK = (
     "SECURITY — show a summary of local account and download safeguards.",
     "PASSWD — change the app password after verifying the current password.",
     "EXIT or QUIT — close CalculanatorOS.",
-    "PC hardware note — LED, temperature, and Wi-Fi signal in this menu are simulated; Pico firmware controls real hardware.",
+    "PC hardware note — LED, temperature, and instrument-panel Wi-Fi signal are simulated; direct WIFI commands use the host adapter.",
 )
 
 
@@ -1356,7 +1907,7 @@ def main():
     global CURRENT_USER, COLOR_ENABLED, DEFAULT_COLOR
     session_started = time.monotonic()
     load_settings()
-    DEFAULT_COLOR = {"green": "0A", "amber": "0E", "plain": "07"}.get(SETTINGS["theme"], "07")
+    DEFAULT_COLOR = {"green": "0A", "amber": "0E", "plain": "07", "ocean": "0B", "violet": "0D"}.get(SETTINGS["theme"], "07")
     COLOR_ENABLED = enable_terminal_colors()
     set_console_color(DEFAULT_COLOR)
     print("+==================================================+")
@@ -1374,8 +1925,11 @@ def main():
     except OSError:
         print("Could not save the username preference; sign-in still succeeded.")
     print("PC MODE: hardware features are simulated. Type HARDWARE or HELP.")
-    if SETTINGS["startup"] == "menu":
-        apps_menu()
+    if not os.environ.get("CALCULANATOROS_FROM_DESKTOP"):
+        if SETTINGS["startup"] == "menu":
+            apps_menu()
+        elif SETTINGS["startup"] == "desktop":
+            open_desktop()
 
     while True:
         try:
@@ -1389,6 +1943,14 @@ def main():
         if cmd in ("EXIT", "QUIT"):
             print("Goodbye!")
             break
+        elif cmd in ("SHUTDOWN", "POWER OFF"):
+            shutdown_command("SHUTDOWN")
+        elif cmd in ("REBOOT", "RESTART"):
+            shutdown_command("REBOOT")
+        elif cmd == "SUDO" or cmd.startswith("SUDO "):
+            calc_sudo_command(raw[4:].strip())
+        elif cmd == "CALC SUDO" or cmd.startswith("CALC SUDO "):
+            calc_sudo_command(raw[9:].strip())
         elif cmd == "HELP":
             print(HELP_COMMANDS)
         elif cmd == "HELP_BOOK":
@@ -1403,6 +1965,23 @@ def main():
             print("Usage: APP <name>")
         elif cmd == "EDITOS":
             edit_os_app()
+        elif cmd == "DESKTOP":
+            open_desktop()
+        elif cmd == "TERMINAL":
+            terminal_window()
+        elif cmd == "SCREEN" or cmd.startswith("SCREEN "):
+            screen_command(raw[6:] if len(raw) > 6 else "")
+        elif cmd == "WALLPAPER" or cmd.startswith("WALLPAPER "):
+            wallpaper_command(raw[9:] if len(raw) > 9 else "")
+        elif cmd in ("LINUX", "LINUX HELP", "DEBIAN"):
+            print("Read-only commands: WHOAMI, PWD, LS [path], UNAME, DF, FREE, PS, IP, UPTIME.")
+            print("For system packages use APT INSTALL <package>; privileged actions use CALC SUDO.")
+        elif cmd in ("WHOAMI", "PWD", "LS", "UNAME", "DF", "FREE", "PS", "IP", "NETINFO") or any(
+                cmd.startswith(name + " ") for name in ("LS",)):
+            parts = raw.split(maxsplit=1)
+            debian_command(parts[0], parts[1] if len(parts) > 1 else "")
+        elif cmd == "APT" or cmd.startswith("APT "):
+            calc_sudo_command(raw)
         elif cmd == "SETTINGS":
             settings_command()
         elif cmd.startswith("SETTINGS "):
@@ -1430,7 +2009,10 @@ def main():
         elif cmd == "DATE":
             print(datetime.datetime.now())
         elif cmd == "UPTIME":
-            print("Desktop test uptime:", round(time.monotonic() - session_started, 1), "seconds")
+            if os.name == "nt":
+                print("CalculanatorOS session uptime:", round(time.monotonic() - session_started, 1), "seconds")
+            else:
+                debian_command("UPTIME")
         elif cmd == "CLEAR":
             os.system("cls" if os.name == "nt" else "clear")
         elif cmd == "CALC":
@@ -1441,9 +2023,11 @@ def main():
             instruments()
         elif cmd.startswith("LED"):
             instrument_command(cmd)
-        elif cmd in ("WIFI", "SCAN", "CONNECT", "DISCONNECT") or cmd.startswith("WIFI "):
+        elif cmd in ("WIFI", "SCAN", "CONNECT", "DISCONNECT", "NETINFO WIFI") or cmd.startswith("WIFI "):
             wifi_command(raw)
         elif cmd in ("BLUETOOTH", "BT", "BT STATUS", "BT SCAN", "BLUETOOTH SCAN"):
+            bluetooth_command(cmd)
+        elif cmd in ("BT DEVICES", "BLUETOOTH DEVICES"):
             bluetooth_command(cmd)
         elif cmd == "PKG" or cmd.startswith("PKG "):
             package_command(raw)
@@ -1451,19 +2035,14 @@ def main():
             host = input("Host or IP address: ").strip()
             if host and re.fullmatch(r"[A-Za-z0-9_.:-]{1,253}", host):
                 try:
-                    result = subprocess.run(["ping", "-n", "1", host], check=False, timeout=10)
-                    print("Ping exit code:", result.returncode)
+                    ping_args = ["ping", "-n", "1", host] if os.name == "nt" else ["ping", "-c", "1", host]
+                    result = subprocess.run(ping_args, check=False, timeout=10)
+                    if result.returncode:
+                        print("Ping failed with exit code:", result.returncode)
                 except (OSError, subprocess.TimeoutExpired) as error:
                     print("Ping failed:", type(error).__name__)
             else:
                 print("Enter a valid host name or IP address.")
-        elif cmd == "IP" or cmd == "NETINFO":
-            if os.name == "nt":
-                result = subprocess.run(["ipconfig"], check=False, timeout=15)
-                if result.returncode:
-                    print("Network information command failed with exit code", result.returncode)
-            else:
-                print("Network information is available through the host operating system.")
         elif cmd == "NOTE" or cmd.startswith("NOTE "):
             note = raw[4:].strip() if len(raw) > 4 else input("Note: ")
             if note:
